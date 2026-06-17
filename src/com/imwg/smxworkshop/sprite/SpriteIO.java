@@ -2258,7 +2258,7 @@ final public class SpriteIO {
 					if (fi > 0) {
 						Sprite.Frame prevFrame = sprite.getFrame(fi - 1);
 						if (prevFrame.getAnchorX(Sprite.DATA_IMAGE) != anchorX
-								&& prevFrame.getAnchorY(Sprite.DATA_IMAGE) != anchorY) {
+								|| prevFrame.getAnchorY(Sprite.DATA_IMAGE) != anchorY) {
 							prevNormal = null;
 							prevSmudge = null;
 							prevPlayer = null;
@@ -2419,7 +2419,7 @@ final public class SpriteIO {
 					if (fi > 0) {
 						Sprite.Frame prevFrame = sprite.getFrame(fi - 1);
 						if (prevFrame.getAnchorX(Sprite.DATA_SHADOW) != anchorX
-								&& prevFrame.getAnchorY(Sprite.DATA_SHADOW) != anchorY) {
+								|| prevFrame.getAnchorY(Sprite.DATA_SHADOW) != anchorY) {
 							prevShadow = null;
 						}
 					}

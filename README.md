@@ -51,6 +51,43 @@ The validated prototype:
 The existing encoder is intended to remain available as the fast mode. The new
 encoder will be introduced as an optional high-quality mode.
 
+## SLD Shadow Delta Fix
+
+This branch also fixes an SLD save bug found while repairing the resized mule
+cart idle animation.
+
+`SpriteIO.saveSLDSprite` delta-compresses normal and shadow layers against the
+previous frame. Before this fix, the previous-layer cache was invalidated only
+when both X and Y anchors changed:
+
+```java
+prevAnchorX != anchorX && prevAnchorY != anchorY
+```
+
+That is incorrect. SLD inherited tiles are decoded using layer anchors, so a
+change on either axis makes the previous cache unsafe. If only one coordinate
+changed, SMX Workshop could encode a frame as inherited from the wrong
+coordinate space, producing shifted or missing shadow data after reload.
+
+The fix invalidates the cache when either anchor coordinate changes:
+
+```java
+prevAnchorX != anchorX || prevAnchorY != anchorY
+```
+
+The same correction is applied to normal-layer cache invalidation because it
+uses the same inherited-tile mechanism.
+
+`docs/sld-shadow-anchor-repro.js` is a minimal Nashorn reproduction. With the
+current upstream jar, it creates two frames with identical local shadow pixels
+and a one-pixel X-anchor difference, then reloads the saved SLD. The expected
+result is zero decoded shadow differences; the buggy encoder produces:
+
+```text
+same_local_shadow_pixels_after_roundtrip=false
+shadow_pixel_differences=8
+```
+
 ## Mule Cart Results
 
 | Graphic | RGB error | Temporal error |
