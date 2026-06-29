@@ -2575,7 +2575,7 @@ final public class SpriteIO {
 		int height = data.length == 0 ? 0 : data.length / width;
 		int rows = height >> 2, columns = width >> 2;
 		int tileCount = rows * columns;
-		
+
 		if (previousData != null && previousData.length == data.length) {
 			boolean allEqual = true;
 			for (int i = data.length - 1; i >= 0; --i) {
@@ -2745,7 +2745,7 @@ final public class SpriteIO {
 		int height = data.length == 0 ? 0 : data.length / width;
 		int rows = height >> 2, columns = width >> 2;
 		int tileCount = rows * columns;
-		
+
 		if (previousData != null && previousData.length == data.length) {
 			boolean allEqual = true;
 			for (int i = data.length - 1; i >= 0; --i) {
@@ -3161,17 +3161,56 @@ final public class SpriteIO {
 	
 	static public int getImageModeStride(int imageMode){
 		int stride = 1;
-		
+
 		if ((imageMode & IMAGE_MODE_MASK) == IMAGE_MODE_SEPARATESHADOW)
 			++stride;
 		if ((imageMode & IMAGE_MODE_OUTLINE_MASK) != 0)
 			++stride;
 		if ((imageMode & IMAGE_MODE_SMUDGE_MASK) != 0)
 			++stride;
-		
+
 		return stride;
 	}
-	
+
+	static private BufferedImage renderFrameLayer(Sprite sprite, Sprite.Frame frame, int type,
+			int playerColorId) {
+		int width = frame.getWidth(type);
+		int height = frame.getHeight(type);
+		if (width <= 0 || height <= 0)
+			return null;
+
+		BufferedImage im = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+		Palette pal = Palette.getPalette(frame.getPalette());
+		Palette ppal = Palette.getPlayerPalette(sprite.playerMode, playerColorId);
+		Palette spal = Palette.getPalette(512);
+
+		for (int y = 0; y < height; ++y) {
+			for (int x = 0; x < width; ++x) {
+				int pixel = frame.getPixel(type, x, y);
+				if (pixel == Sprite.PIXEL_NULL)
+					continue;
+
+				if (type == Sprite.DATA_IMAGE) {
+					if (pixel >= Sprite.PIXEL_PLAYER_START) {
+						if (pixel < ppal.getColorCount() + Sprite.PIXEL_PLAYER_START)
+							im.setRGB(x, y, 0xff000000 | ppal.getColor(pixel - Sprite.PIXEL_PLAYER_START));
+					} else {
+						if (pixel < pal.getColorCount())
+							im.setRGB(x, y, pal.getColor(pixel));
+					}
+				} else if (type == Sprite.DATA_SHADOW) {
+					im.setRGB(x, y, pixel << 24);
+				} else if (type == Sprite.DATA_OUTLINE) {
+					im.setRGB(x, y, 0xffffffff);
+				} else if (type == Sprite.DATA_SMUDGE) {
+					im.setRGB(x, y, spal.getColor(pixel));
+				}
+			}
+		}
+
+		return im;
+	}
+
 	static public int exportToImages(Sprite sprite, File file, Map<String, Integer> settings,
 			int[] frameIds) throws IOException{
 		
@@ -3209,16 +3248,12 @@ final public class SpriteIO {
 		boolean csv = (anchorMode & ANCHOR_MODE_CSV_MASK) != 0;
 		boolean monoSmudge = (imageMode & IMAGE_MODE_MONO_SMUDGE_MASK) != 0;
 		boolean fixedDimensions = settings.get("fixedDimensions") != 0;
-		
+		int playerColorId = settings.get("playerColor");
+
 		int stride = getImageModeStride(imageMode);
 		imageMode &= IMAGE_MODE_MASK;
 		anchorMode &= ANCHOR_MODE_MASK;
 
-		SpritePreview preview = new SpritePreview();
-		preview.setSprite(sprite);
-		preview.playerColorId = settings.get("playerColor");
-		preview.refresh();
-		
 		if (settings.get("selectedOnly") == 0){
 			frameIds = new int[sprite.getFrameCount()];
 			for (int i = 0; i < sprite.getFrameCount(); ++i){
@@ -3294,7 +3329,11 @@ final public class SpriteIO {
 			
 			int realIndex = frameIds[index];
 			Sprite.Frame frame = sprite.getFrame(realIndex);
-			
+			BufferedImage normalImage = renderFrameLayer(sprite, frame, Sprite.DATA_IMAGE, playerColorId);
+			BufferedImage shadowImage = renderFrameLayer(sprite, frame, Sprite.DATA_SHADOW, playerColorId);
+			BufferedImage outlineImage = renderFrameLayer(sprite, frame, Sprite.DATA_OUTLINE, playerColorId);
+			BufferedImage smudgeImage = renderFrameLayer(sprite, frame, Sprite.DATA_SMUDGE, playerColorId);
+
 			if (anchorMode == ANCHOR_MODE_TIGHT){
 				x0 += frame.getAnchorX(); y0 += frame.getAnchorY();
 			} else {
@@ -3304,10 +3343,7 @@ final public class SpriteIO {
 				anchorList.append(x0 - fx0)
 						.append(", ").append(y0 - fy0).append("\r\n");
 			}
-			
-			// Wait for Notification
-			while (!preview.getFrameStatus(realIndex));
-			
+
 			// Draw background color
 			if (background){
 				gr.setColor(backgroundColor);
@@ -3317,7 +3353,7 @@ final public class SpriteIO {
 			
 			// Draw lower Shadow
 			if (imageMode != IMAGE_MODE_SEPARATESHADOW){
-				gr.drawImage(preview.getFrameImage(realIndex, Sprite.DATA_SHADOW), 
+				gr.drawImage(shadowImage,
 						x0 - frame.getAnchorX(Sprite.DATA_SHADOW),
 						y0 - frame.getAnchorY(Sprite.DATA_SHADOW),
 						null);
@@ -3335,28 +3371,28 @@ final public class SpriteIO {
 								im.setRGB(x + x1, y + y1, 0xfd000000);
 					}
 				}
-			
-				gr.drawImage(preview.getFrameImage(realIndex, Sprite.DATA_IMAGE), 
+
+				gr.drawImage(normalImage,
 						x0 - frame.getAnchorX(Sprite.DATA_IMAGE),
 						y0 - frame.getAnchorY(Sprite.DATA_IMAGE),
 						null);
-			
+
 				x1 = x0 - frame.getAnchorX(Sprite.DATA_IMAGE);
 				y1 = y0 - frame.getAnchorY(Sprite.DATA_IMAGE);
-				BufferedImage frameImage = preview.getFrameImage(realIndex, Sprite.DATA_IMAGE); 
+				BufferedImage frameImage = normalImage;
 				for (int y = 0; y < frame.getHeight(Sprite.DATA_IMAGE); ++y){
 					for (int x = 0; x < frame.getWidth(Sprite.DATA_IMAGE); ++x){
-						int pixel = frame.getPixel(Sprite.DATA_IMAGE, x, y); 
+						int pixel = frame.getPixel(Sprite.DATA_IMAGE, x, y);
 						if (pixel != Sprite.PIXEL_NULL){
 							if (pixel < Sprite.PIXEL_PLAYER_START) // Normal Pixel
 								im.setRGB(x + x1, y + y1, frameImage.getRGB(x, y) & 0xffffff | 0xE0000000);
 						}
 					}
 				}
-				
+
 			}else if (imageMode != IMAGE_MODE_SHADOWONLY){
-				
-				gr.drawImage(preview.getFrameImage(realIndex, Sprite.DATA_IMAGE), 
+
+				gr.drawImage(normalImage,
 						x0 - frame.getAnchorX(Sprite.DATA_IMAGE),
 						y0 - frame.getAnchorY(Sprite.DATA_IMAGE),
 						null);
@@ -3368,7 +3404,7 @@ final public class SpriteIO {
 				fx0 += frameWidth; x0 += frameWidth;
 				if (background){
 					gr.fillRect(fx0, fy0, frameWidth, frameHeight);
-					gr.drawImage(preview.getFrameImage(realIndex, Sprite.DATA_SHADOW), 
+					gr.drawImage(shadowImage,
 							x0 - frame.getAnchorX(Sprite.DATA_SHADOW),
 							y0 - frame.getAnchorY(Sprite.DATA_SHADOW),
 							null);
@@ -3377,7 +3413,7 @@ final public class SpriteIO {
 					gr.setPaintMode();
 					gr.setColor(Color.WHITE);
 				}else{
-					gr.drawImage(preview.getFrameImage(realIndex, Sprite.DATA_SHADOW), 
+					gr.drawImage(shadowImage,
 							x0 - frame.getAnchorX(Sprite.DATA_SHADOW),
 							y0 - frame.getAnchorY(Sprite.DATA_SHADOW),
 							null);
@@ -3392,7 +3428,7 @@ final public class SpriteIO {
 					gr.setPaintMode();
 					gr.setColor(Color.WHITE);
 				}
-				gr.drawImage(preview.getFrameImage(realIndex, Sprite.DATA_OUTLINE), 
+				gr.drawImage(outlineImage,
 						x0 - frame.getAnchorX(Sprite.DATA_OUTLINE),
 						y0 - frame.getAnchorY(Sprite.DATA_OUTLINE),
 						null);
@@ -3401,7 +3437,7 @@ final public class SpriteIO {
 				fx0 += frameWidth; x0 += frameWidth;
 				if (background){
 					gr.fillRect(fx0, fy0, frameWidth, frameHeight);
-					gr.drawImage(preview.getFrameImage(realIndex, Sprite.DATA_SMUDGE), 
+					gr.drawImage(smudgeImage,
 							x0 - frame.getAnchorX(Sprite.DATA_SMUDGE),
 							y0 - frame.getAnchorY(Sprite.DATA_SMUDGE),
 							null);
@@ -3410,7 +3446,7 @@ final public class SpriteIO {
 					gr.setPaintMode();
 					gr.setColor(Color.WHITE);
 				}else{
-					gr.drawImage(preview.getFrameImage(realIndex, Sprite.DATA_SMUDGE), 
+					gr.drawImage(smudgeImage,
 							x0 - frame.getAnchorX(Sprite.DATA_SMUDGE),
 							y0 - frame.getAnchorY(Sprite.DATA_SMUDGE),
 							null);
